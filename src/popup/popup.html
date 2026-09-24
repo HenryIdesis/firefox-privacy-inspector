@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Privacy Inspector</title>
+
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+
+  <main>
+    <header>
+      <h1>Privacy Inspector</h1>
+      <button id="refreshButton" type="button">
+        Atualizar
+      </button>
+    </header>
+
+    <section>
+      <h2>Página</h2>
+
+      <p id="pageHost">
+        Carregando...
+      </p>
+    </section>
+
+    <section>
+      <h2>Terceira parte</h2>
+
+      <p>
+        Requisições:
+        <strong id="requestCount">0</strong>
+      </p>
+
+      <p>
+        Domínios:
+        <strong id="domainCount">0</strong>
+      </p>
+    </section>
+
+    <section>
+      <h2>Domínios detectados</h2>
+
+      <div id="domains">
+        Nenhum domínio de terceira parte detectado.
+      </div>
+    </section>
+
+    <p id="errorMessage" hidden></p>
+  </main>
+
+  <script src="popup.js"></script>
+
+</body>
+</html>
