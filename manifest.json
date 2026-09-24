@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Firefox Privacy Inspector",
-  "version": "0.1.0",
-  "description": "Detector e bloqueador de indicadores de rastreamento e violação de privacidade.",
+  "version": "0.2.0",
+  "description": "Detector e bloqueador de indicadores de rastreamento e violacao de privacidade.",
   "permissions": [
     "webRequest",
+    "webRequestBlocking",
     "cookies",
     "storage",
     "scripting"
@@ -30,6 +31,16 @@
         "src/content.js"
       ],
       "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/inject.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

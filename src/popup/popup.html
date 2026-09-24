@@ -3,56 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
   <title>Privacy Inspector</title>
-
   <link rel="stylesheet" href="popup.css">
 </head>
-
 <body>
-
   <main>
     <header>
       <h1>Privacy Inspector</h1>
-      <button id="refreshButton" type="button">
-        Atualizar
-      </button>
+      <button id="refreshButton" type="button">Atualizar</button>
     </header>
+
+    <p id="errorMessage" hidden></p>
 
     <section>
       <h2>Página</h2>
-
-      <p id="pageHost">
-        Carregando...
-      </p>
+      <p id="pageHost">Carregando...</p>
     </section>
 
     <section>
       <h2>Terceira parte</h2>
-
-      <p>
-        Requisições:
-        <strong id="requestCount">0</strong>
-      </p>
-
-      <p>
-        Domínios:
-        <strong id="domainCount">0</strong>
-      </p>
+      <p>Requisições: <span id="requestCount">0</span></p>
+      <p>Domínios: <span id="domainCount">0</span></p>
     </section>
 
     <section>
       <h2>Domínios detectados</h2>
-
-      <div id="domains">
-        Nenhum domínio de terceira parte detectado.
-      </div>
+      <div id="domains"></div>
     </section>
 
-    <p id="errorMessage" hidden></p>
+    <section>
+      <h2>Cookies</h2>
+      <table id="cookiesTable">
+        <thead>
+          <tr><th></th><th>Sessão</th><th>Persistentes</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1ª parte</td>
+            <td id="cookiesFirstSession">0</td>
+            <td id="cookiesFirstPersistent">0</td>
+          </tr>
+          <tr>
+            <td>3ª parte</td>
+            <td id="cookiesThirdSession">0</td>
+            <td id="cookiesThirdPersistent">0</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Armazenamento local</h2>
+      <ul id="storageList">
+        <li>localStorage: <span id="storageLocal">não usado</span></li>
+        <li>sessionStorage: <span id="storageSession">não usado</span></li>
+        <li>IndexedDB: <span id="storageIndexedDB">não usado</span></li>
+      </ul>
+    </section>
   </main>
 
   <script src="popup.js"></script>
-
 </body>
 </html>
