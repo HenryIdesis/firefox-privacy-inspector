@@ -93,3 +93,23 @@ p {
 #storageList .unused {
   color: #080;
 }
+
+.badge-bad {
+  color: #b00;
+  font-weight: bold;
+}
+
+.badge-ok {
+  color: #080;
+}
+
+#hijackDetails {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #444;
+}
+
+#hijackDetails li {
+  word-break: break-all;
+}

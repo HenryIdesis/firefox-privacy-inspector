@@ -16,6 +16,11 @@ const storageLocal = document.getElementById("storageLocal");
 const storageSession = document.getElementById("storageSession");
 const storageIndexedDB = document.getElementById("storageIndexedDB");
 
+const canvasInfo = document.getElementById("canvasInfo");
+const bounceInfo = document.getElementById("bounceInfo");
+const hijackInfo = document.getElementById("hijackInfo");
+const hijackDetails = document.getElementById("hijackDetails");
+
 function showError(message) {
   errorMessageElement.textContent = message;
   errorMessageElement.hidden = false;
@@ -28,7 +33,6 @@ function clearError() {
 
 function renderDomains(thirdPartyDomains) {
   domainsElement.innerHTML = "";
-
   const entries = Object.entries(thirdPartyDomains);
   entries.sort((a, b) => b[1].requestCount - a[1].requestCount);
 
@@ -76,10 +80,10 @@ function renderStorage(storage) {
   function set(el, used, detail) {
     if (used) {
       el.textContent = detail ? `usado (${detail})` : "usado";
-      el.className = "used";
+      el.className = "badge-bad";
     } else {
       el.textContent = "não usado";
-      el.className = "unused";
+      el.className = "badge-ok";
     }
   }
 
@@ -106,6 +110,51 @@ function renderStorage(storage) {
       ? storage.indexedDB.databases.join(", ")
       : null
   );
+}
+
+function renderCanvas(canvas) {
+  if (canvas.detected) {
+    canvasInfo.textContent = "Detectado — métodos: " + canvas.methods.join(", ");
+    canvasInfo.className = "badge-bad";
+  } else {
+    canvasInfo.textContent = "Não detectado";
+    canvasInfo.className = "badge-ok";
+  }
+}
+
+function renderBounce(bounce) {
+  if (bounce.detected) {
+    bounceInfo.textContent = "Detectado — " + bounce.chains.length + " ocorrência(s)";
+    bounceInfo.className = "badge-bad";
+  } else {
+    bounceInfo.textContent = "Não detectado";
+    bounceInfo.className = "badge-ok";
+  }
+}
+
+function renderHijacking(hijacking) {
+  hijackDetails.innerHTML = "";
+
+  if (!hijacking.detected) {
+    hijackInfo.textContent = "Não detectado";
+    hijackInfo.className = "badge-ok";
+    return;
+  }
+
+  hijackInfo.textContent = "Detectado";
+  hijackInfo.className = "badge-bad";
+
+  for (const ws of hijacking.websockets) {
+    const li = document.createElement("li");
+    li.textContent = "WebSocket → " + ws;
+    hijackDetails.appendChild(li);
+  }
+
+  for (const name of hijacking.globalOverwrites) {
+    const li = document.createElement("li");
+    li.textContent = "Global sobrescrito: " + name;
+    hijackDetails.appendChild(li);
+  }
 }
 
 async function loadReport() {
@@ -146,6 +195,9 @@ async function loadReport() {
     renderDomains(report.thirdPartyDomains);
     renderCookies(report.cookies);
     renderStorage(report.storage);
+    renderCanvas(report.canvas || { detected: false, methods: [] });
+    renderBounce(report.bounceTracking || { detected: false, chains: [] });
+    renderHijacking(report.hijacking || { detected: false, websockets: [], globalOverwrites: [] });
   } catch (error) {
     console.error("[Privacy Inspector] erro ao carregar relatório:", error);
     pageHostElement.textContent = "Indisponível";

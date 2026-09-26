@@ -34,6 +34,19 @@ function createReport(tabId, pageUrl = null) {
       localStorage: { used: false, keys: [] },
       sessionStorage: { used: false, keys: [] },
       indexedDB: { used: false, databases: [] }
+    },
+
+    canvas: { detected: false, methods: [] },
+
+    hijacking: {
+      detected: false,
+      websockets: [],
+      globalOverwrites: []
+    },
+
+    bounceTracking: {
+      detected: false,
+      chains: []
     }
   };
 }
@@ -84,6 +97,20 @@ function isPersistentSetCookie(value) {
   return /(^|;)\s*(expires|max-age)\s*=/i.test(value);
 }
 
+function looksLikeSyncPayload(url) {
+  try {
+    const params = new URL(url).searchParams;
+    for (const [, value] of params) {
+      if (value.length >= 40 && /^[A-Za-z0-9+/=_-]+$/.test(value)) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
     if (details.tabId < 0 || !isWebUrl(details.url)) return;
@@ -101,18 +128,20 @@ browser.webRequest.onBeforeRequest.addListener(
 
     if (details.thirdParty === true) {
       recordThirdPartyRequest(report, details);
-      console.log(
-        "[Privacy Inspector] terceira parte:",
-        getHostname(details.url),
-        details.type,
-        details.url
-      );
+
+      if (looksLikeSyncPayload(details.url)) {
+        report.bounceTracking.detected = true;
+        const key = getHostname(details.url) + "::" + details.type;
+        addUnique(report.bounceTracking.chains, key);
+        console.log(
+          "[Privacy Inspector] possível cookie sync:",
+          getHostname(details.url)
+        );
+      }
     }
   },
   { urls: ["<all_urls>"] }
 );
-
-/* Cookie do Set */
 
 browser.webRequest.onHeadersReceived.addListener(
   (details) => {
@@ -144,28 +173,82 @@ browser.webRequest.onHeadersReceived.addListener(
   ["responseHeaders", "blocking"]
 );
 
-/* msg */
+browser.webRequest.onBeforeRedirect.addListener(
+  (details) => {
+    if (details.tabId < 0) return;
+    const report = reports.get(details.tabId);
+    if (!report) return;
+
+    const from = getHostname(details.url);
+    const to = getHostname(details.redirectUrl);
+    if (!from || !to || from === to) return;
+
+    const fromThird = !from.endsWith(report.pageHost || "");
+    const toThird = !to.endsWith(report.pageHost || "");
+
+    if (fromThird && toThird) {
+      report.bounceTracking.detected = true;
+      addUnique(report.bounceTracking.chains, from + " -> " + to);
+      console.log("[Privacy Inspector] redirect terceiro:", from, "->", to);
+    }
+  },
+  { urls: ["<all_urls>"] }
+);
+
+/*msg*/
 
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return;
 
-  if (message.type === "storage-event" && sender.tab) {
+  if (sender.tab) {
     const report = reports.get(sender.tab.id);
     if (!report) return;
 
-    const { storageType, key } = message;
-
-    if (storageType === "indexedDB") {
-      report.storage.indexedDB.used = true;
-      addUnique(report.storage.indexedDB.databases, key);
-    } else if (
-      storageType === "localStorage" ||
-      storageType === "sessionStorage"
-    ) {
-      report.storage[storageType].used = true;
-      addUnique(report.storage[storageType].keys, key);
+    if (message.type === "storage-event") {
+      const { storageType, key } = message;
+      if (storageType === "indexedDB") {
+        report.storage.indexedDB.used = true;
+        addUnique(report.storage.indexedDB.databases, key);
+      } else if (
+        storageType === "localStorage" ||
+        storageType === "sessionStorage"
+      ) {
+        report.storage[storageType].used = true;
+        addUnique(report.storage[storageType].keys, key);
+      }
+      return;
     }
-    return;
+
+    if (message.type === "canvas-event") {
+      report.canvas.detected = true;
+      addUnique(report.canvas.methods, message.method);
+      return;
+    }
+
+    if (message.type === "websocket-event") {
+      const host = getHostname(message.url);
+      if (!host) return;
+
+      const isThird =
+        report.pageHost && !host.endsWith(report.pageHost);
+
+      if (isThird) {
+        report.hijacking.detected = true;
+        addUnique(report.hijacking.websockets, host);
+        console.log("[Privacy Inspector] WebSocket terceiro:", host);
+      }
+      return;
+    }
+
+    if (message.type === "global-overwrite") {
+      report.hijacking.detected = true;
+      addUnique(report.hijacking.globalOverwrites, message.name);
+      console.log(
+        "[Privacy Inspector] global sobrescrito:",
+        message.name
+      );
+      return;
+    }
   }
 
   if (message.type === "get-report") {
