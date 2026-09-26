@@ -58,6 +58,13 @@ p {
   border-top: 1px solid #f0f0f0;
 }
 
+.domain-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .domain-name {
   font-weight: bold;
 }
@@ -66,6 +73,28 @@ p {
 .domain-classification {
   font-size: 12px;
   color: #666;
+}
+
+.domain-block-btn {
+  font-size: 11px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.domain-block-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.domain-blocked {
+  background: #fff5f5;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.domain-blocked .domain-name {
+  color: #b00;
+  text-decoration: line-through;
 }
 
 #cookiesTable {
@@ -113,6 +142,7 @@ p {
 #hijackDetails li {
   word-break: break-all;
 }
+
 #scoreSection {
   background: #fafafa;
   border: 1px solid #e0e0e0;
@@ -139,11 +169,19 @@ p {
 }
 
 .score-good #scoreValue,
-.score-good #scoreLabel { color: #080; }
+.score-good #scoreLabel {
+  color: #080;
+}
+
 .score-moderate #scoreValue,
-.score-moderate #scoreLabel { color: #c80; }
+.score-moderate #scoreLabel {
+  color: #c80;
+}
+
 .score-bad #scoreValue,
-.score-bad #scoreLabel { color: #b00; }
+.score-bad #scoreLabel {
+  color: #b00;
+}
 
 .score-subtitle {
   margin: 4px 0 8px;
@@ -172,4 +210,13 @@ p {
   font-size: 11px;
   color: #888;
   margin-top: 6px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #666;
+}
+
+.hint a {
+  color: #06c;
 }

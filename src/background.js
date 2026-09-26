@@ -1,107 +1,132 @@
 "use strict";
 
-const reports = new Map();
+var reports = new Map();
+var blocklist = new Set();
 
-function isWebUrl(url) {
-  return typeof url === "string" &&
-    (url.startsWith("http://") || url.startsWith("https://"));
-}
+browser.storage.local.get("blocklist").then(function (s) {
+  blocklist = new Set(s.blocklist || []);
+});
 
-function getHostname(url) {
+browser.storage.onChanged.addListener(function (ch, area) {
+  if (area === "local" && ch.blocklist) {
+    blocklist = new Set(ch.blocklist.newValue || []);
+  }
+});
+
+function hostnameOf(url) {
   try {
     return new URL(url).hostname;
-  } catch {
+  } catch (e) {
     return null;
   }
 }
 
-const MULTI_LEVEL_TLDS = [
+var MULTI_TLDS = [
   "com.br", "com.au", "co.uk", "co.jp", "co.nz",
   "com.ar", "com.mx", "com.pt", "com.es", "com.it",
   "org.br", "net.br", "gov.br", "edu.br"
 ];
 
-function getBaseDomain(hostname) {
-  if (!hostname) return null;
-  const parts = hostname.split(".");
-  if (parts.length <= 2) return hostname;
-
-  const lastTwo = parts.slice(-2).join(".");
-  const lastThree = parts.slice(-3).join(".");
-
-  if (MULTI_LEVEL_TLDS.includes(lastTwo)) {
-    return lastThree;
+function baseDomain(host) {
+  if (!host) {
+    return null;
   }
-  return lastTwo;
+
+  var parts = host.split(".");
+  if (parts.length <= 2) {
+    return host;
+  }
+
+  var last2 = parts.slice(-2).join(".");
+  if (MULTI_TLDS.indexOf(last2) !== -1) {
+    return parts.slice(-3).join(".");
+  }
+
+  return last2;
 }
 
-function isThirdParty(requestHost, pageHost) {
-  if (!requestHost || !pageHost) return false;
-  const reqBase = getBaseDomain(requestHost);
-  const pageBase = getBaseDomain(pageHost);
-  if (!reqBase || !pageBase) return false;
-  return reqBase !== pageBase;
+function isThirdParty(reqHost, pageHost) {
+  if (!reqHost || !pageHost) {
+    return false;
+  }
+
+  var a = baseDomain(reqHost);
+  var b = baseDomain(pageHost);
+
+  if (!a || !b) {
+    return false;
+  }
+
+  return a !== b;
 }
 
-function createReport(tabId, pageUrl = null) {
-  const pageHost = getHostname(pageUrl);
+function isBlocked(host) {
+  if (!host) {
+    return false;
+  }
+
+  var it = blocklist.values();
+  var cur = it.next();
+
+  while (!cur.done) {
+    var entry = cur.value;
+    if (host === entry || host.endsWith("." + entry)) {
+      return true;
+    }
+    cur = it.next();
+  }
+
+  return false;
+}
+
+function newReport(tabId, url) {
   return {
-    tabId,
-    pageUrl,
-    pageHost,
-    pageBaseDomain: getBaseDomain(pageHost),
+    tabId: tabId,
+    pageUrl: url,
+    pageHost: hostnameOf(url),
     startedAt: Date.now(),
-
     thirdPartyRequestCount: 0,
     thirdPartyDomains: {},
-
+    blockedCount: 0,
     cookies: {
       firstParty: { session: 0, persistent: 0 },
       thirdParty: { session: 0, persistent: 0 }
     },
-
     storage: {
       localStorage: { used: false, keys: [] },
       sessionStorage: { used: false, keys: [] },
       indexedDB: { used: false, databases: [] }
     },
-
     canvas: { detected: false, methods: [] },
-
-    hijacking: {
-      detected: false,
-      websockets: [],
-      globalOverwrites: []
-    },
-
-    bounceTracking: {
-      detected: false,
-      chains: []
-    }
+    hijacking: { detected: false, websockets: [], globalOverwrites: [] },
+    bounceTracking: { detected: false, chains: [] }
   };
 }
 
-function getOrCreateReport(tabId, fallbackUrl = null) {
+function reportFor(tabId, fallback) {
   if (!reports.has(tabId)) {
-    reports.set(tabId, createReport(tabId, fallbackUrl));
+    reports.set(tabId, newReport(tabId, fallback));
   }
+
   return reports.get(tabId);
 }
 
-function addUnique(array, value) {
-  if (value && !array.includes(value)) {
-    array.push(value);
+function push(arr, val) {
+  if (val && arr.indexOf(val) === -1) {
+    arr.push(val);
   }
 }
 
-function recordThirdPartyRequest(report, details) {
-  const hostname = getHostname(details.url);
-  if (!hostname) return;
+function trackThird(report, details) {
+  var host = hostnameOf(details.url);
+  if (!host) {
+    return;
+  }
 
-  report.thirdPartyRequestCount += 1;
+  report.thirdPartyRequestCount++;
 
-  if (!report.thirdPartyDomains[hostname]) {
-    report.thirdPartyDomains[hostname] = {
+  if (!report.thirdPartyDomains[host]) {
+    report.thirdPartyDomains[host] = {
       requestCount: 0,
       resourceTypes: [],
       trackingClassification: [],
@@ -109,209 +134,242 @@ function recordThirdPartyRequest(report, details) {
     };
   }
 
-  const domain = report.thirdPartyDomains[hostname];
-  domain.requestCount += 1;
-  addUnique(domain.resourceTypes, details.type);
+  var d = report.thirdPartyDomains[host];
+  d.requestCount++;
+  push(d.resourceTypes, details.type);
 
-  const classification = details.urlClassification?.thirdParty ?? [];
-  for (const item of classification) {
-    addUnique(domain.trackingClassification, item);
+  if (details.urlClassification && details.urlClassification.thirdParty) {
+    var list = details.urlClassification.thirdParty;
+    for (var i = 0; i < list.length; i++) {
+      push(d.trackingClassification, list[i]);
+    }
   }
 
-  if (domain.sampleUrls.length < 5) {
-    addUnique(domain.sampleUrls, details.url);
+  if (d.sampleUrls.length < 5) {
+    push(d.sampleUrls, details.url);
   }
 }
 
-function classifySetCookie(value) {
-  const maxAgeMatch = value.match(/(^|;)\s*max-age\s*=\s*(-?\d+)/i);
-  if (maxAgeMatch) {
-    const seconds = parseInt(maxAgeMatch[2], 10);
-    if (seconds <= 0) return "delete";
+function cookieKind(value) {
+  var m = value.match(/(^|;)\s*max-age\s*=\s*(-?\d+)/i);
+
+  if (m) {
+    var secs = parseInt(m[2], 10);
+    if (secs <= 0) {
+      return "delete";
+    }
     return "persistent";
   }
 
-  const expiresMatch = value.match(/(^|;)\s*expires\s*=\s*([^;]+)/i);
-  if (expiresMatch) {
-    const when = Date.parse(expiresMatch[2]);
-    if (!isNaN(when) && when <= Date.now()) return "delete";
+  m = value.match(/(^|;)\s*expires\s*=\s*([^;]+)/i);
+  if (m) {
+    var when = Date.parse(m[2]);
+    if (!isNaN(when) && when <= Date.now()) {
+      return "delete";
+    }
     return "persistent";
   }
 
   return "session";
 }
 
-function looksLikeSyncPayload(url) {
+function looksLikeSync(url) {
   try {
-    const params = new URL(url).searchParams;
-    for (const [, value] of params) {
-      if (value.length >= 40 && /^[A-Za-z0-9+/=_-]+$/.test(value)) {
+    var params = new URL(url).searchParams;
+
+    for (var pair of params) {
+      var v = pair[1];
+      if (v.length >= 40 && /^[A-Za-z0-9+\/=_-]+$/.test(v)) {
         return true;
       }
     }
-  } catch {
-    return false;
+  } catch (e) {
   }
+
   return false;
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
 function computeScore(report) {
-  const breakdown = [];
+  var items = [];
 
-  const domainPenalty = clamp(
-    Object.keys(report.thirdPartyDomains).length * 1,
-    0,
-    25
-  );
-  breakdown.push({
+  var domainCount = Object.keys(report.thirdPartyDomains).length;
+  items.push({
     criterion: "Domínios de terceira parte",
-    penalty: domainPenalty,
-    detail: Object.keys(report.thirdPartyDomains).length + " domínios (teto 25)"
+    penalty: Math.max(0, Math.min(25, domainCount * 1)),
+    detail: domainCount + " domínios (teto 25)"
   });
 
-  const reqPenalty = clamp(report.thirdPartyRequestCount * 0.2, 0, 15);
-  breakdown.push({
+  items.push({
     criterion: "Requisições de terceira parte",
-    penalty: reqPenalty,
+    penalty: Math.max(0, Math.min(15, report.thirdPartyRequestCount * 0.2)),
     detail: report.thirdPartyRequestCount + " requisições (teto 15)"
   });
 
-  const cThirdPersistent = report.cookies.thirdParty.persistent;
-  const cThirdPersistentPenalty = clamp(cThirdPersistent * 2, 0, 15);
-  breakdown.push({
+  var ctp = report.cookies.thirdParty.persistent;
+  items.push({
     criterion: "Cookies de 3ª parte persistentes",
-    penalty: cThirdPersistentPenalty,
-    detail: cThirdPersistent + " cookies (teto 15)"
+    penalty: Math.max(0, Math.min(15, ctp * 2)),
+    detail: ctp + " cookies (teto 15)"
   });
 
-  const cThirdSession = report.cookies.thirdParty.session;
-  const cThirdSessionPenalty = clamp(cThirdSession * 0.5, 0, 5);
-  breakdown.push({
+  var cts = report.cookies.thirdParty.session;
+  items.push({
     criterion: "Cookies de 3ª parte de sessão",
-    penalty: cThirdSessionPenalty,
-    detail: cThirdSession + " cookies (teto 5)"
+    penalty: Math.max(0, Math.min(5, cts * 0.5)),
+    detail: cts + " cookies (teto 5)"
   });
 
-  const cFirstPersistent = report.cookies.firstParty.persistent;
-  const cFirstPenalty = clamp(cFirstPersistent * 0.2, 0, 3);
-  breakdown.push({
+  var cfp = report.cookies.firstParty.persistent;
+  items.push({
     criterion: "Cookies de 1ª parte persistentes",
-    penalty: cFirstPenalty,
-    detail: cFirstPersistent + " cookies (teto 3)"
+    penalty: Math.max(0, Math.min(3, cfp * 0.2)),
+    detail: cfp + " cookies (teto 3)"
   });
 
-  let storagePenalty = 0;
-  if (report.storage.localStorage.used) storagePenalty += 5;
-  if (report.storage.sessionStorage.used) storagePenalty += 3;
-  if (report.storage.indexedDB.used) storagePenalty += 5;
-  breakdown.push({
+  var st = 0;
+  var stParts = [];
+
+  if (report.storage.localStorage.used) {
+    st += 5;
+    stParts.push("localStorage");
+  }
+  if (report.storage.sessionStorage.used) {
+    st += 3;
+    stParts.push("sessionStorage");
+  }
+  if (report.storage.indexedDB.used) {
+    st += 5;
+    stParts.push("IndexedDB");
+  }
+
+  items.push({
     criterion: "Armazenamento HTML5",
-    penalty: storagePenalty,
-    detail: [
-      report.storage.localStorage.used ? "localStorage" : null,
-      report.storage.sessionStorage.used ? "sessionStorage" : null,
-      report.storage.indexedDB.used ? "IndexedDB" : null
-    ].filter(Boolean).join(", ") || "nenhum"
+    penalty: st,
+    detail: stParts.length ? stParts.join(", ") : "nenhum"
   });
 
-  const canvasPenalty = report.canvas.detected ? 15 : 0;
-  breakdown.push({
+  items.push({
     criterion: "Canvas fingerprint",
-    penalty: canvasPenalty,
-    detail: report.canvas.detected
-      ? "detectado: " + report.canvas.methods.join(", ")
-      : "não detectado"
+    penalty: report.canvas.detected ? 15 : 0,
+    detail: report.canvas.detected ? "detectado" : "não detectado"
   });
 
-  const bouncePenalty = report.bounceTracking.detected ? 10 : 0;
-  breakdown.push({
+  items.push({
     criterion: "Bounce tracking / cookie sync",
-    penalty: bouncePenalty,
+    penalty: report.bounceTracking.detected ? 10 : 0,
     detail: report.bounceTracking.detected
       ? report.bounceTracking.chains.length + " ocorrências"
       : "não detectado"
   });
 
-  const hijackPenalty = report.hijacking.detected ? 20 : 0;
-  breakdown.push({
+  items.push({
     criterion: "Hijacking / hook",
-    penalty: hijackPenalty,
-    detail: report.hijacking.detected
-      ? [
-          ...report.hijacking.websockets.map((w) => "WS " + w),
-          ...report.hijacking.globalOverwrites.map((g) => "global " + g)
-        ].join(", ")
-      : "não detectado"
+    penalty: report.hijacking.detected ? 20 : 0,
+    detail: report.hijacking.detected ? "detectado" : "não detectado"
   });
 
-  const totalPenalty = breakdown.reduce((acc, b) => acc + b.penalty, 0);
-  const score = Math.max(0, Math.round(100 - totalPenalty));
+  var total = 0;
+  for (var i = 0; i < items.length; i++) {
+    total += items[i].penalty;
+  }
 
-  let label = "Boa";
-  if (score < 50) label = "Ruim";
-  else if (score < 80) label = "Moderada";
+  var score = Math.max(0, Math.round(100 - total));
+  var label = "Boa";
 
-  return { score, label, breakdown };
+  if (score < 50) {
+    label = "Ruim";
+  } else if (score < 80) {
+    label = "Moderada";
+  }
+
+  return { score: score, label: label, breakdown: items };
 }
 
 browser.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    if (details.tabId < 0 || !isWebUrl(details.url)) return;
-
-    if (details.type === "main_frame") {
-      reports.set(details.tabId, createReport(details.tabId, details.url));
-      console.log("[Privacy Inspector] nova página:", details.tabId, details.url);
+  function (details) {
+    if (details.tabId < 0) {
+      return;
+    }
+    if (details.url.indexOf("http") !== 0) {
       return;
     }
 
-    const report = getOrCreateReport(
+    if (details.type === "main_frame") {
+      reports.set(details.tabId, newReport(details.tabId, details.url));
+      return;
+    }
+
+    var report = reportFor(
       details.tabId,
-      details.documentUrl ?? details.originUrl ?? null
+      details.documentUrl || details.originUrl || null
     );
 
-    const requestHost = getHostname(details.url);
-    if (!requestHost) return;
+    var host = hostnameOf(details.url);
+    if (!host) {
+      return;
+    }
 
-    if (isThirdParty(requestHost, report.pageHost)) {
-      recordThirdPartyRequest(report, details);
+    if (isBlocked(host)) {
+      report.blockedCount++;
 
-      if (looksLikeSyncPayload(details.url)) {
+      if (!report.thirdPartyDomains[host]) {
+        report.thirdPartyDomains[host] = {
+          requestCount: 0,
+          resourceTypes: [],
+          trackingClassification: [],
+          sampleUrls: [],
+          blocked: true
+        };
+      } else {
+        report.thirdPartyDomains[host].blocked = true;
+      }
+
+      return { cancel: true };
+    }
+
+    if (isThirdParty(host, report.pageHost)) {
+      trackThird(report, details);
+
+      if (looksLikeSync(details.url)) {
         report.bounceTracking.detected = true;
-        const key = requestHost + "::" + details.type;
-        addUnique(report.bounceTracking.chains, key);
+        push(report.bounceTracking.chains, host + "::" + details.type);
       }
     }
   },
-  { urls: ["<all_urls>"] }
+  { urls: ["<all_urls>"] },
+  ["blocking"]
 );
 
 browser.webRequest.onHeadersReceived.addListener(
-  (details) => {
-    if (details.tabId < 0) return;
+  function (details) {
+    if (details.tabId < 0) {
+      return;
+    }
 
-    const report = reports.get(details.tabId);
-    if (!report) return;
+    var report = reports.get(details.tabId);
+    if (!report) {
+      return;
+    }
 
-    const headers = details.responseHeaders || [];
-    const setCookies = headers.filter(
-      (h) => h.name.toLowerCase() === "set-cookie"
-    );
+    var headers = details.responseHeaders || [];
+    var third = isThirdParty(hostnameOf(details.url), report.pageHost);
+    var bucket = third ? report.cookies.thirdParty : report.cookies.firstParty;
 
-    if (setCookies.length === 0) return;
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i].name.toLowerCase() !== "set-cookie") {
+        continue;
+      }
 
-    const requestHost = getHostname(details.url);
-    const third = isThirdParty(requestHost, report.pageHost);
-    const bucket = third ? report.cookies.thirdParty : report.cookies.firstParty;
+      var kind = cookieKind(headers[i].value);
+      if (kind === "delete") {
+        continue;
+      }
 
-    for (const header of setCookies) {
-      const kind = classifySetCookie(header.value);
-      if (kind === "delete") continue;
-      if (kind === "persistent") bucket.persistent += 1;
-      else bucket.session += 1;
+      if (kind === "persistent") {
+        bucket.persistent++;
+      } else {
+        bucket.session++;
+      }
     }
   },
   { urls: ["<all_urls>"] },
@@ -319,88 +377,117 @@ browser.webRequest.onHeadersReceived.addListener(
 );
 
 browser.webRequest.onBeforeRedirect.addListener(
-  (details) => {
-    if (details.tabId < 0) return;
-    const report = reports.get(details.tabId);
-    if (!report) return;
+  function (details) {
+    if (details.tabId < 0) {
+      return;
+    }
 
-    const from = getHostname(details.url);
-    const to = getHostname(details.redirectUrl);
-    if (!from || !to || from === to) return;
+    var report = reports.get(details.tabId);
+    if (!report) {
+      return;
+    }
 
-    const fromThird = isThirdParty(from, report.pageHost);
-    const toThird = isThirdParty(to, report.pageHost);
+    var from = hostnameOf(details.url);
+    var to = hostnameOf(details.redirectUrl);
 
-    if (fromThird && toThird) {
+    if (!from || !to || from === to) {
+      return;
+    }
+
+    if (isThirdParty(from, report.pageHost) && isThirdParty(to, report.pageHost)) {
       report.bounceTracking.detected = true;
-      addUnique(report.bounceTracking.chains, from + " -> " + to);
+      push(report.bounceTracking.chains, from + " -> " + to);
     }
   },
   { urls: ["<all_urls>"] }
 );
 
-/*msg*/
-
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!message) return;
+browser.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+  if (!msg) {
+    return;
+  }
 
   if (sender.tab) {
-    const report = reports.get(sender.tab.id);
-    if (!report) return;
-
-    if (message.type === "storage-event") {
-      const { storageType, key } = message;
-      if (storageType === "indexedDB") {
-        report.storage.indexedDB.used = true;
-        addUnique(report.storage.indexedDB.databases, key);
-      } else if (
-        storageType === "localStorage" ||
-        storageType === "sessionStorage"
-      ) {
-        report.storage[storageType].used = true;
-        addUnique(report.storage[storageType].keys, key);
+    var report = reports.get(sender.tab.id);
+    if (report) {
+      if (msg.type === "storage-event") {
+        if (msg.storageType === "indexedDB") {
+          report.storage.indexedDB.used = true;
+          push(report.storage.indexedDB.databases, msg.key);
+        } else if (
+          msg.storageType === "localStorage" ||
+          msg.storageType === "sessionStorage"
+        ) {
+          report.storage[msg.storageType].used = true;
+          push(report.storage[msg.storageType].keys, msg.key);
+        }
+        return;
       }
-      return;
-    }
 
-    if (message.type === "canvas-event") {
-      report.canvas.detected = true;
-      addUnique(report.canvas.methods, message.method);
-      return;
-    }
+      if (msg.type === "canvas-event") {
+        report.canvas.detected = true;
+        push(report.canvas.methods, msg.method);
+        return;
+      }
 
-    if (message.type === "websocket-event") {
-      const host = getHostname(message.url);
-      if (!host) return;
+      if (msg.type === "websocket-event") {
+        var whost = hostnameOf(msg.url);
+        if (whost && isThirdParty(whost, report.pageHost)) {
+          report.hijacking.detected = true;
+          push(report.hijacking.websockets, whost);
+        }
+        return;
+      }
 
-      if (isThirdParty(host, report.pageHost)) {
+      if (msg.type === "global-overwrite") {
         report.hijacking.detected = true;
-        addUnique(report.hijacking.websockets, host);
+        push(report.hijacking.globalOverwrites, msg.name);
+        return;
       }
-      return;
-    }
-
-    if (message.type === "global-overwrite") {
-      report.hijacking.detected = true;
-      addUnique(report.hijacking.globalOverwrites, message.name);
-      return;
     }
   }
 
-  if (message.type === "get-report") {
-    const report = reports.get(message.tabId);
-    if (!report) {
+  if (msg.type === "get-report") {
+    var r = reports.get(msg.tabId);
+
+    if (!r) {
       sendResponse({ error: "Nenhum relatório disponível para esta aba." });
       return;
     }
-    const score = computeScore(report);
-    sendResponse(Object.assign({}, report, { score }));
+
+    var score = computeScore(r);
+    var payload = Object.assign({}, r, { score: score });
+    sendResponse(payload);
     return;
+  }
+
+  if (msg.type === "add-to-blocklist" && msg.domain) {
+    var domain = String(msg.domain).toLowerCase().trim();
+    if (!domain) {
+      return;
+    }
+
+    browser.storage.local.get("blocklist").then(function (s) {
+      var list = s.blocklist || [];
+      if (list.indexOf(domain) === -1) {
+        list.push(domain);
+      }
+      return browser.storage.local.set({ blocklist: list });
+    }).then(function () {
+      sendResponse({ ok: true, domain: domain });
+    });
+
+    return true;
+  }
+
+  if (msg.type === "get-blocklist") {
+    browser.storage.local.get("blocklist").then(function (s) {
+      sendResponse({ blocklist: s.blocklist || [] });
+    });
+    return true;
   }
 });
 
-browser.tabs.onRemoved.addListener((tabId) => {
+browser.tabs.onRemoved.addListener(function (tabId) {
   reports.delete(tabId);
 });
-
-console.log("[Privacy Inspector] detector de terceira parte carregado");

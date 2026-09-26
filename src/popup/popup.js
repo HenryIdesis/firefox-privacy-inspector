@@ -1,90 +1,158 @@
 "use strict";
 
-const pageHostElement = document.getElementById("pageHost");
-const requestCountElement = document.getElementById("requestCount");
-const domainCountElement = document.getElementById("domainCount");
-const domainsElement = document.getElementById("domains");
-const errorMessageElement = document.getElementById("errorMessage");
-const refreshButton = document.getElementById("refreshButton");
+var pageHostEl = document.getElementById("pageHost");
+var reqCountEl = document.getElementById("requestCount");
+var domCountEl = document.getElementById("domainCount");
+var blockedCountEl = document.getElementById("blockedCount");
+var domainsEl = document.getElementById("domains");
+var errorEl = document.getElementById("errorMessage");
+var refreshBtn = document.getElementById("refreshButton");
+var openOptionsLink = document.getElementById("openOptions");
 
-const cookiesFirstSession = document.getElementById("cookiesFirstSession");
-const cookiesFirstPersistent = document.getElementById("cookiesFirstPersistent");
-const cookiesThirdSession = document.getElementById("cookiesThirdSession");
-const cookiesThirdPersistent = document.getElementById("cookiesThirdPersistent");
+var c1s = document.getElementById("cookiesFirstSession");
+var c1p = document.getElementById("cookiesFirstPersistent");
+var c3s = document.getElementById("cookiesThirdSession");
+var c3p = document.getElementById("cookiesThirdPersistent");
 
-const storageLocal = document.getElementById("storageLocal");
-const storageSession = document.getElementById("storageSession");
-const storageIndexedDB = document.getElementById("storageIndexedDB");
+var stLocal = document.getElementById("storageLocal");
+var stSession = document.getElementById("storageSession");
+var stIDB = document.getElementById("storageIndexedDB");
 
-const canvasInfo = document.getElementById("canvasInfo");
-const bounceInfo = document.getElementById("bounceInfo");
-const hijackInfo = document.getElementById("hijackInfo");
-const hijackDetails = document.getElementById("hijackDetails");
+var canvasEl = document.getElementById("canvasInfo");
+var bounceEl = document.getElementById("bounceInfo");
+var hijackEl = document.getElementById("hijackInfo");
+var hijackDetailsEl = document.getElementById("hijackDetails");
 
-const scoreSection = document.getElementById("scoreSection");
-const scoreValue = document.getElementById("scoreValue");
-const scoreLabel = document.getElementById("scoreLabel");
-const scoreBreakdown = document.getElementById("scoreBreakdown");
+var scoreSection = document.getElementById("scoreSection");
+var scoreValueEl = document.getElementById("scoreValue");
+var scoreLabelEl = document.getElementById("scoreLabel");
+var scoreBreakdownEl = document.getElementById("scoreBreakdown");
 
-function showError(message) {
-  errorMessageElement.textContent = message;
-  errorMessageElement.hidden = false;
+var MULTI_TLDS = [
+  "com.br", "com.au", "co.uk", "co.jp", "co.nz",
+  "com.ar", "com.mx", "com.pt", "com.es", "com.it",
+  "org.br", "net.br", "gov.br", "edu.br"
+];
+
+function baseDomain(host) {
+  if (!host) {
+    return null;
+  }
+
+  var parts = host.split(".");
+  if (parts.length <= 2) {
+    return host;
+  }
+
+  var last2 = parts.slice(-2).join(".");
+  if (MULTI_TLDS.indexOf(last2) !== -1) {
+    return parts.slice(-3).join(".");
+  }
+
+  return last2;
+}
+
+function showError(text) {
+  errorEl.textContent = text;
+  errorEl.hidden = false;
 }
 
 function clearError() {
-  errorMessageElement.textContent = "";
-  errorMessageElement.hidden = true;
+  errorEl.textContent = "";
+  errorEl.hidden = true;
 }
 
-function renderDomains(thirdPartyDomains) {
-  domainsElement.innerHTML = "";
-  const entries = Object.entries(thirdPartyDomains);
-  entries.sort((a, b) => b[1].requestCount - a[1].requestCount);
+function renderDomains(domains, blocklist) {
+  domainsEl.innerHTML = "";
+
+  var entries = Object.entries(domains);
+  entries.sort(function (a, b) {
+    return b[1].requestCount - a[1].requestCount;
+  });
 
   if (entries.length === 0) {
-    domainsElement.textContent = "Nenhum domínio de terceira parte detectado.";
+    domainsEl.textContent = "Nenhum domínio de terceira parte detectado.";
     return;
   }
 
-  for (const [hostname, info] of entries) {
-    const container = document.createElement("div");
-    container.className = "domain";
+  var inList = new Set(blocklist);
 
-    const name = document.createElement("div");
-    name.className = "domain-name";
-    name.textContent = hostname;
+  for (var i = 0; i < entries.length; i++) {
+    var hostname = entries[i][0];
+    var info = entries[i][1];
+    var base = baseDomain(hostname);
+    var locked = info.blocked === true || inList.has(base) || inList.has(hostname);
 
-    const meta = document.createElement("div");
+    var box = document.createElement("div");
+    box.className = "domain";
+
+    if (info.blocked) {
+      box.classList.add("domain-blocked");
+    }
+
+    var head = document.createElement("div");
+    head.className = "domain-header";
+
+    var nameEl = document.createElement("div");
+    nameEl.className = "domain-name";
+    nameEl.textContent = hostname;
+    head.appendChild(nameEl);
+
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "domain-block-btn";
+    btn.textContent = locked ? "Bloqueado" : "Bloquear";
+    btn.disabled = locked;
+
+    if (!locked) {
+      (function (target, button) {
+        button.addEventListener("click", function () {
+          browser.runtime.sendMessage({
+            type: "add-to-blocklist",
+            domain: target
+          }).then(function () {
+            button.textContent = "Bloqueado";
+            button.disabled = true;
+          });
+        });
+      })(base || hostname, btn);
+    }
+
+    head.appendChild(btn);
+    box.appendChild(head);
+
+    var meta = document.createElement("div");
     meta.className = "domain-meta";
-    meta.textContent =
-      `${info.requestCount} requisição(ões) · ` +
-      `tipo(s): ${info.resourceTypes.join(", ") || "não identificado"}`;
+    meta.textContent = info.requestCount + " requisição(ões) · tipo(s): " +
+      (info.resourceTypes.join(", ") || "não identificado");
+    box.appendChild(meta);
 
-    const classification = document.createElement("div");
-    classification.className = "domain-classification";
-    classification.textContent =
-      info.trackingClassification.length > 0
-        ? `Classificação Firefox: ${info.trackingClassification.join(", ")}`
-        : "Classificação Firefox: nenhuma registrada";
+    var cls = document.createElement("div");
+    cls.className = "domain-classification";
 
-    container.appendChild(name);
-    container.appendChild(meta);
-    container.appendChild(classification);
-    domainsElement.appendChild(container);
+    if (info.trackingClassification.length > 0) {
+      cls.textContent = "Classificação Firefox: " +
+        info.trackingClassification.join(", ");
+    } else {
+      cls.textContent = "Classificação Firefox: nenhuma registrada";
+    }
+
+    box.appendChild(cls);
+    domainsEl.appendChild(box);
   }
 }
 
-function renderCookies(cookies) {
-  cookiesFirstSession.textContent = String(cookies.firstParty.session);
-  cookiesFirstPersistent.textContent = String(cookies.firstParty.persistent);
-  cookiesThirdSession.textContent = String(cookies.thirdParty.session);
-  cookiesThirdPersistent.textContent = String(cookies.thirdParty.persistent);
+function renderCookies(c) {
+  c1s.textContent = c.firstParty.session;
+  c1p.textContent = c.firstParty.persistent;
+  c3s.textContent = c.thirdParty.session;
+  c3p.textContent = c.thirdParty.persistent;
 }
 
-function renderStorage(storage) {
+function renderStorage(s) {
   function set(el, used, detail) {
     if (used) {
-      el.textContent = detail ? `usado (${detail})` : "usado";
+      el.textContent = detail ? "usado (" + detail + ")" : "usado";
       el.className = "badge-bad";
     } else {
       el.textContent = "não usado";
@@ -92,149 +160,152 @@ function renderStorage(storage) {
     }
   }
 
-  set(
-    storageLocal,
-    storage.localStorage.used,
-    storage.localStorage.keys.length > 0
-      ? storage.localStorage.keys.length + " chaves"
-      : null
-  );
+  var lk = s.localStorage.keys.length;
+  var sk = s.sessionStorage.keys.length;
+  var db = s.indexedDB.databases;
 
-  set(
-    storageSession,
-    storage.sessionStorage.used,
-    storage.sessionStorage.keys.length > 0
-      ? storage.sessionStorage.keys.length + " chaves"
-      : null
-  );
-
-  set(
-    storageIndexedDB,
-    storage.indexedDB.used,
-    storage.indexedDB.databases.length > 0
-      ? storage.indexedDB.databases.join(", ")
-      : null
-  );
+  set(stLocal, s.localStorage.used, lk > 0 ? lk + " chaves" : null);
+  set(stSession, s.sessionStorage.used, sk > 0 ? sk + " chaves" : null);
+  set(stIDB, s.indexedDB.used, db.length > 0 ? db.join(", ") : null);
 }
 
-function renderCanvas(canvas) {
-  if (canvas.detected) {
-    canvasInfo.textContent = "Detectado — métodos: " + canvas.methods.join(", ");
-    canvasInfo.className = "badge-bad";
+function renderCanvas(c) {
+  if (c.detected) {
+    canvasEl.textContent = "Detectado — métodos: " + c.methods.join(", ");
+    canvasEl.className = "badge-bad";
   } else {
-    canvasInfo.textContent = "Não detectado";
-    canvasInfo.className = "badge-ok";
+    canvasEl.textContent = "Não detectado";
+    canvasEl.className = "badge-ok";
   }
 }
 
-function renderBounce(bounce) {
-  if (bounce.detected) {
-    bounceInfo.textContent = "Detectado — " + bounce.chains.length + " ocorrência(s)";
-    bounceInfo.className = "badge-bad";
+function renderBounce(b) {
+  if (b.detected) {
+    bounceEl.textContent = "Detectado — " + b.chains.length + " ocorrência(s)";
+    bounceEl.className = "badge-bad";
   } else {
-    bounceInfo.textContent = "Não detectado";
-    bounceInfo.className = "badge-ok";
+    bounceEl.textContent = "Não detectado";
+    bounceEl.className = "badge-ok";
   }
 }
 
-function renderHijacking(hijacking) {
-  hijackDetails.innerHTML = "";
+function renderHijack(h) {
+  hijackDetailsEl.innerHTML = "";
 
-  if (!hijacking.detected) {
-    hijackInfo.textContent = "Não detectado";
-    hijackInfo.className = "badge-ok";
+  if (!h.detected) {
+    hijackEl.textContent = "Não detectado";
+    hijackEl.className = "badge-ok";
     return;
   }
 
-  hijackInfo.textContent = "Detectado";
-  hijackInfo.className = "badge-bad";
+  hijackEl.textContent = "Detectado";
+  hijackEl.className = "badge-bad";
 
-  for (const ws of hijacking.websockets) {
-    const li = document.createElement("li");
-    li.textContent = "WebSocket → " + ws;
-    hijackDetails.appendChild(li);
-  }
+  h.websockets.forEach(function (w) {
+    var li = document.createElement("li");
+    li.textContent = "WebSocket → " + w;
+    hijackDetailsEl.appendChild(li);
+  });
 
-  for (const name of hijacking.globalOverwrites) {
-    const li = document.createElement("li");
-    li.textContent = "Global sobrescrito: " + name;
-    hijackDetails.appendChild(li);
-  }
+  h.globalOverwrites.forEach(function (g) {
+    var li = document.createElement("li");
+    li.textContent = "Global sobrescrito: " + g;
+    hijackDetailsEl.appendChild(li);
+  });
 }
 
-function renderScore(score) {
+function renderScore(s) {
   scoreSection.classList.remove("score-good", "score-moderate", "score-bad");
+  scoreValueEl.textContent = s.score;
+  scoreLabelEl.textContent = s.label;
 
-  scoreValue.textContent = String(score.score);
-  scoreLabel.textContent = score.label;
+  var cls = "score-good";
 
-  let cls = "score-good";
-  if (score.score < 50) cls = "score-bad";
-  else if (score.score < 80) cls = "score-moderate";
+  if (s.score < 50) {
+    cls = "score-bad";
+  } else if (s.score < 80) {
+    cls = "score-moderate";
+  }
+
   scoreSection.classList.add(cls);
 
-  scoreBreakdown.innerHTML = "";
-  for (const item of score.breakdown) {
-    const li = document.createElement("li");
-    li.textContent =
-      `${item.criterion}: −${item.penalty.toFixed(1)} (${item.detail})`;
-    scoreBreakdown.appendChild(li);
-  }
+  scoreBreakdownEl.innerHTML = "";
+
+  s.breakdown.forEach(function (item) {
+    var li = document.createElement("li");
+    li.textContent = item.criterion + ": −" + item.penalty.toFixed(1) +
+      " (" + item.detail + ")";
+    scoreBreakdownEl.appendChild(li);
+  });
 }
 
-async function loadReport() {
+function loadReport() {
   clearError();
+  pageHostEl.textContent = "Carregando...";
+  reqCountEl.textContent = "0";
+  domCountEl.textContent = "0";
+  blockedCountEl.textContent = "0";
+  domainsEl.textContent = "Carregando...";
 
-  pageHostElement.textContent = "Carregando...";
-  requestCountElement.textContent = "0";
-  domainCountElement.textContent = "0";
-  domainsElement.textContent = "Carregando...";
+  browser.tabs.query({ active: true, currentWindow: true })
+    .then(function (tabs) {
+      var tab = tabs[0];
 
-  try {
-    const tabs = await browser.tabs.query({
-      active: true,
-      currentWindow: true
+      if (!tab || typeof tab.id !== "number") {
+        throw new Error("Não foi possível identificar a aba atual.");
+      }
+
+      return Promise.all([
+        browser.runtime.sendMessage({ type: "get-report", tabId: tab.id }),
+        browser.runtime.sendMessage({ type: "get-blocklist" })
+      ]);
+    })
+    .then(function (results) {
+      var report = results[0];
+      var blResp = results[1];
+      var blocklist = (blResp && blResp.blocklist) || [];
+
+      if (!report || report.error) {
+        throw new Error((report && report.error) || "Relatório indisponível.");
+      }
+
+      pageHostEl.textContent = report.pageHost || "desconhecido";
+      reqCountEl.textContent = report.thirdPartyRequestCount;
+      blockedCountEl.textContent = report.blockedCount || 0;
+
+      var domains = Object.keys(report.thirdPartyDomains);
+      domCountEl.textContent = domains.length;
+
+      renderDomains(report.thirdPartyDomains, blocklist);
+      renderCookies(report.cookies);
+      renderStorage(report.storage);
+      renderCanvas(report.canvas || { detected: false, methods: [] });
+      renderBounce(report.bounceTracking || { detected: false, chains: [] });
+      renderHijack(
+        report.hijacking || {
+          detected: false,
+          websockets: [],
+          globalOverwrites: []
+        }
+      );
+
+      if (report.score) {
+        renderScore(report.score);
+      }
+    })
+    .catch(function (err) {
+      console.error("[Privacy Inspector]", err);
+      pageHostEl.textContent = "Indisponível";
+      domainsEl.textContent = "";
+      showError(err.message);
     });
-
-    const tab = tabs[0];
-
-    if (!tab || typeof tab.id !== "number") {
-      throw new Error("Não foi possível identificar a aba atual.");
-    }
-
-    const report = await browser.runtime.sendMessage({
-      type: "get-report",
-      tabId: tab.id
-    });
-
-    if (!report || report.error) {
-      throw new Error(report?.error ?? "Relatório indisponível.");
-    }
-
-    pageHostElement.textContent = report.pageHost ?? "desconhecido";
-    requestCountElement.textContent = String(report.thirdPartyRequestCount);
-
-    const domains = Object.keys(report.thirdPartyDomains);
-    domainCountElement.textContent = String(domains.length);
-
-    renderDomains(report.thirdPartyDomains);
-    renderCookies(report.cookies);
-    renderStorage(report.storage);
-    renderCanvas(report.canvas || { detected: false, methods: [] });
-    renderBounce(report.bounceTracking || { detected: false, chains: [] });
-    renderHijacking(report.hijacking || { detected: false, websockets: [], globalOverwrites: [] });
-
-    if (report.score) {
-      renderScore(report.score);
-    }
-  } catch (error) {
-    console.error("[Privacy Inspector] erro ao carregar relatório:", error);
-    pageHostElement.textContent = "Indisponível";
-    domainsElement.textContent = "";
-    showError(error.message);
-  }
 }
 
-refreshButton.addEventListener("click", loadReport);
+refreshBtn.addEventListener("click", loadReport);
+
+openOptionsLink.addEventListener("click", function (ev) {
+  ev.preventDefault();
+  browser.runtime.openOptionsPage();
+});
 
 loadReport();

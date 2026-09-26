@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Inspector — Lista de bloqueio</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <h1>Lista de bloqueio personalizada</h1>
+
+    <p class="description">
+      Um domínio por linha. Requisições para o domínio e seus subdomínios
+      serão canceladas. Vale para todas as abas.
+      Linhas começando com <code>#</code> são ignoradas.
+    </p>
+
+    <textarea id="blocklistInput" spellcheck="false"
+      placeholder="exemplo.com&#10;ads.exemplo.com"></textarea>
+
+    <div class="actions">
+      <button id="saveButton" type="button">Salvar</button>
+      <button id="reloadButton" type="button">Recarregar</button>
+      <span id="status"></span>
+    </div>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>
