@@ -21,6 +21,11 @@ const bounceInfo = document.getElementById("bounceInfo");
 const hijackInfo = document.getElementById("hijackInfo");
 const hijackDetails = document.getElementById("hijackDetails");
 
+const scoreSection = document.getElementById("scoreSection");
+const scoreValue = document.getElementById("scoreValue");
+const scoreLabel = document.getElementById("scoreLabel");
+const scoreBreakdown = document.getElementById("scoreBreakdown");
+
 function showError(message) {
   errorMessageElement.textContent = message;
   errorMessageElement.hidden = false;
@@ -157,6 +162,26 @@ function renderHijacking(hijacking) {
   }
 }
 
+function renderScore(score) {
+  scoreSection.classList.remove("score-good", "score-moderate", "score-bad");
+
+  scoreValue.textContent = String(score.score);
+  scoreLabel.textContent = score.label;
+
+  let cls = "score-good";
+  if (score.score < 50) cls = "score-bad";
+  else if (score.score < 80) cls = "score-moderate";
+  scoreSection.classList.add(cls);
+
+  scoreBreakdown.innerHTML = "";
+  for (const item of score.breakdown) {
+    const li = document.createElement("li");
+    li.textContent =
+      `${item.criterion}: −${item.penalty.toFixed(1)} (${item.detail})`;
+    scoreBreakdown.appendChild(li);
+  }
+}
+
 async function loadReport() {
   clearError();
 
@@ -198,6 +223,10 @@ async function loadReport() {
     renderCanvas(report.canvas || { detected: false, methods: [] });
     renderBounce(report.bounceTracking || { detected: false, chains: [] });
     renderHijacking(report.hijacking || { detected: false, websockets: [], globalOverwrites: [] });
+
+    if (report.score) {
+      renderScore(report.score);
+    }
   } catch (error) {
     console.error("[Privacy Inspector] erro ao carregar relatório:", error);
     pageHostElement.textContent = "Indisponível";
