@@ -151,6 +151,10 @@ function trackThird(report, details) {
 }
 
 function cookieKind(value) {
+  if (typeof value !== "string") {
+    return "session";
+  }
+
   var m = value.match(/(^|;)\s*max-age\s*=\s*(-?\d+)/i);
 
   if (m) {
@@ -164,7 +168,11 @@ function cookieKind(value) {
   m = value.match(/(^|;)\s*expires\s*=\s*([^;]+)/i);
   if (m) {
     var when = Date.parse(m[2]);
-    if (!isNaN(when) && when <= Date.now()) {
+    if (isNaN(when)) {
+      return "session";
+    }
+
+    if (when <= Date.now()) {
       return "delete";
     }
     return "persistent";
@@ -187,6 +195,14 @@ function looksLikeSync(url) {
   }
 
   return false;
+}
+
+function isExtensionPage(sender) {
+  if (!sender || sender.tab || !sender.url) {
+    return false;
+  }
+
+  return sender.url.indexOf(browser.runtime.getURL("")) === 0;
 }
 
 function computeScore(report) {
@@ -447,7 +463,7 @@ browser.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     }
   }
 
-  if (msg.type === "get-report") {
+  if (msg.type === "get-report" && isExtensionPage(sender)) {
     var r = reports.get(msg.tabId);
 
     if (!r) {
@@ -461,7 +477,7 @@ browser.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     return;
   }
 
-  if (msg.type === "add-to-blocklist" && msg.domain) {
+  if (msg.type === "add-to-blocklist" && msg.domain && isExtensionPage(sender)) {
     var domain = String(msg.domain).toLowerCase().trim();
     if (!domain) {
       return;
@@ -480,7 +496,7 @@ browser.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     return true;
   }
 
-  if (msg.type === "get-blocklist") {
+  if (msg.type === "get-blocklist" && isExtensionPage(sender)) {
     browser.storage.local.get("blocklist").then(function (s) {
       sendResponse({ blocklist: s.blocklist || [] });
     });
