@@ -11,4 +11,8 @@ Versão observada: Firefox 156.0. A tabela completa, com links para as capturas 
 | Query Parameters | Valores dos quatro links observáveis | Score 100; quatro links conferidos | Sem divergência relevante |
 | Request Blocking | Domínio na blocklist não responde às requisições interceptadas | 21 bloqueadas; `serviceworker-fetch` escapou | Limitação de `webRequest.onBeforeRequest` para requisições iniciadas dentro de Service Worker |
 | JS objects in global scope (`js-leaks`) | Alterações globais detectáveis pela página | Score 100 e hijacking não detectado; o perfil mostra os hooks da extensão | A instrumentação é visível para a página, mas o detector não conta os próprios hooks como hijacking |
-| Tracker Reporting | Página reporta trackers | Sem coleta independente na entrega original | Requer uma execução manual adicional; nenhum resultado foi inventado |
+| Tracker Reporting — script | Tracker carregado via script | Score 99; 1 requisição, 1 domínio; `doubleclick.net` | Requisição de script de terceiro detectada |
+| Tracker Reporting — surrogate | Tracker com surrogate | Score 89; 1 requisição, 1 domínio; `doubleclick.net` | Surrogate ainda gera requisição observável |
+| Tracker Reporting — imagem | Tracker carregado via imagem | Score 99; 1 requisição, 1 domínio; `facebook.com` | Requisição de imagem de terceiro detectada |
+| Tracker Reporting — document fragment | Tracker criado via fragmento | Score 99; 1 requisição, 1 domínio; `facebook.com` | Fragmento gerou requisição observável |
+| Tracker Reporting — fetch | Tracker carregado via fetch | Score 99; 1 requisição, 1 domínio; `facebook.com` | `fetch` apareceu como `xmlhttprequest` no `webRequest` |

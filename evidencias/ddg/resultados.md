@@ -7,6 +7,11 @@ Rodei em `privacy-test-pages.site/privacy-protections/storage-blocking/`. Deu 23
 
 IndexedDB apareceu como usado no plugin. localStorage e sessionStorage não. Isso porque a página escreve com `localStorage.data = valor` em vez de `setItem`, e o hook sobrescreve o método. Não pega atribuição direta. Cookies têm o mesmo problema: a página grava via `document.cookie`, isso não passa pelo cabeçalho HTTP, então nosso contador não vê.
 
+Tracker Reporting
+Rodei os cinco subtestes. O de script deu score 99 com uma requisição para `doubleclick.net`; o de surrogate deu 89 com uma requisição para `doubleclick.net`; o de imagem deu 99 com uma requisição para `facebook.com`; o de document fragment deu 99 com uma requisição para `facebook.com`; e o de fetch deu 99 com uma requisição para `facebook.com` classificada como `xmlhttprequest`.
+
+Os cinco prints estão em `tracker-reporting-script.png`, `tracker-reporting-surrogate.png`, `tracker-reporting-img.png`, `tracker-reporting-fragment.png` e `tracker-reporting-fetch.png`.
+
 Fingerprinting
 `/privacy-protections/fingerprinting/`. 124 datapoints coletados, 14 falhas. O plugin pegou canvas nos dois métodos, `toDataURL` e `getImageData`. Score 85, só a penalidade de canvas mesmo.
 

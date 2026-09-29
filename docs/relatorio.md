@@ -53,13 +53,19 @@ Os testes foram executados em 27 de setembro de 2026 no Firefox 156.0, versão c
 | Query Parameters | Os valores adicionados aos links devem ser observáveis na navegação | Score 100; quatro links testados | Não houve divergência relevante | [captura](../evidencias/ddg/Captura%20de%20tela%202026-09-27%20124916.png) |
 | Request Blocking | Um domínio colocado na blocklist não deve responder a requisições interceptadas | 21 requisições bloqueadas; `serviceworker-fetch` escapou | `webRequest.onBeforeRequest` não intercepta de forma confiável requisições iniciadas dentro de Service Worker | [captura](../evidencias/ddg/Captura%20de%20tela%202026-09-27%20125559.png) |
 | JS objects in global scope (`js-leaks`) | A página deve identificar alterações nos objetos globais | Score 100 e hijacking não detectado | O `profile.json` identifica os hooks legítimos da extensão; o detector não se autoacusa. Isso é uma limitação conhecida da estratégia, não ausência de instrumentação | [captura](../evidencias/ddg/Captura%20de%20tela%202026-09-27%20130027.png), [perfil](../evidencias/ddg/profile%281%29.json) |
-| Tracker Reporting | A página deve reportar trackers identificados pelo exercício | Não há captura independente desta página na coleta entregue | O resultado não foi inventado. Para fechar integralmente o roteiro, ainda é necessário executar essa página com a extensão carregada e salvar o print/JSON correspondente | — |
+| Tracker Reporting — script | A página deve carregar um tracker principal via script | Score 99; 1 requisição, 1 domínio e 0 bloqueios; `doubleclick.net` detectado como script | O plugin identificou a requisição de terceiro e a classificação de tracking informada pelo Firefox | [captura](../evidencias/ddg/tracker-reporting-script.png) |
+| Tracker Reporting — surrogate | A página deve carregar um tracker com surrogate | Score 89; 1 requisição, 1 domínio e 0 bloqueios; `doubleclick.net` detectado como script | O surrogate ainda aparece como requisição de terceiro observável; a diferença de score vem da classificação/categorias contabilizadas pelo plugin | [captura](../evidencias/ddg/tracker-reporting-surrogate.png) |
+| Tracker Reporting — imagem | A página deve carregar um tracker via imagem | Score 99; 1 requisição, 1 domínio e 0 bloqueios; `facebook.com` detectado como imagem | O carregamento por imagem foi observado no `webRequest` e classificado pelo Firefox como tracking social | [captura](../evidencias/ddg/tracker-reporting-img.png) |
+| Tracker Reporting — document fragment | A página deve criar um tracker via document fragment | Score 99; 1 requisição, 1 domínio e 0 bloqueios; `facebook.com` detectado como imagem | O tracker criado pelo fragmento gerou uma requisição observável ao domínio de terceiro | [captura](../evidencias/ddg/tracker-reporting-fragment.png) |
+| Tracker Reporting — fetch | A página deve carregar um tracker via `fetch` | Score 99; 1 requisição, 1 domínio e 0 bloqueios; `facebook.com` detectado como `xmlhttprequest` | A requisição iniciada por `fetch` apareceu no `webRequest` como `xmlhttprequest`; a própria página informa que o tracker foi carregado | [captura](../evidencias/ddg/tracker-reporting-fetch.png) |
 
 ### Leitura dos resultados do DDG
 
 O teste de Storage Blocking validou a diferença entre medir o cabeçalho de cookie e observar a API de storage. A página consegue gravar por caminhos que o plugin deliberadamente não intercepta. O teste de Storage Partitioning confirmou o isolamento observado pelo próprio exercício, com a única condição de WebSQL não suportado.
 
 O teste de bounce não invalida a heurística: ele expõe uma lacuna de escopo entre recursos da mesma página e navegações principais. A extensão reinicia o relatório quando muda o `main_frame`, portanto não finge detectar uma cadeia que não acompanha.
+
+O Tracker Reporting foi executado nos cinco subtestes. O plugin detectou uma requisição de terceiro em cada caso. Script, imagem, document fragment e fetch produziram score 99; o surrogate produziu score 89. As diferenças de domínio e tipo de recurso aparecem diretamente no popup e foram registradas na tabela.
 
 No teste de JS leaks, o perfil confirma que a página enxerga mudanças feitas pela extensão. A extensão evita contar os próprios hooks como hijacking, mas isso significa que a página pode detectar a presença da instrumentação. Essa decisão reduz falso positivo no relatório principal e deve ser lida como limitação do detector.
 
@@ -120,7 +126,7 @@ Nenhuma dessas limitações foi escondida; cada uma aparece no resultado corresp
 - [x] três sites reais, três HARs, capturas do plugin, Blacklight e uBlock.
 - [x] score aplicado aos três sites e reconciliação dos contadores.
 - [x] correção do canal de mensagens para impedir comandos administrativos vindos da página.
-- [ ] capturar a página **Tracker Reporting** do roteiro e acrescentar seu print/JSON na tabela DDG.
+- [x] capturar os cinco subtestes da página **Tracker Reporting** e acrescentar os prints na tabela DDG.
 
 ## Fechando
 
